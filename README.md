@@ -1,144 +1,108 @@
-Routing Protocol Simulator (Java Swing GUI)
+🚀 Routing Protocol Simulator (Java Swing GUI)
 
-This project is a full interactive network routing simulator built in Java Swing, allowing users to:
+A fully interactive Computer Networks routing simulator built using Java Swing, allowing students to design network topologies, simulate routing protocols, and visualize routing tables live on the canvas.
 
-Draw network topologies
-
-Add/remove routers and links
-
-Assign link costs
-
-Simulate Distance Vector and Link State (Dijkstra) routing
-
-Visualize per-node routing tables inline on the canvas
-
-Animate packet/route propagation
-
-Save & load topologies
-
-Drag routers and routing-table windows
-
-Delete routers/links interactively by clicking
-
-It is designed as an educational tool for Computer Networks courses and fully meets the requirements given by the professor.
-
-⭐ Features Overview
+✨ Features
 🖼️ Interactive GUI
 
-Left panel: editing tools
+Draw routers and links directly on the canvas
 
-Canvas: fully interactive graph drawing
+Drag routers freely
 
-Right panel: configuration and settings
+Draggable routing-table windows
 
-Per-router routing tables appear next to each router (draggable)
+Clean router icon design
 
-🧩 Topology Editing
+Auto-align & manual repositioning of routing tables
 
-Add routers with auto-labeling (A, B, C, …)
+📡 Routing Algorithms
+1. Distance Vector Routing
 
-Add links with custom or default weights
+Simulated iterative table exchange
 
-Delete routers/links by entering delete mode and clicking them
-
-Drag routers freely across the canvas
-
-Routing tables follow router movement automatically
-
-Tables can also be manually repositioned
-
-🔍 Routing Algorithms
-1) Distance Vector
-
-Iterative table exchanges
+Node & link flashing animation for updates
 
 Convergence visualization
 
-"packet exchange" animation via flashing edges
+2. Link State Routing (Dijkstra)
 
-2) Link State
+Per-router shortest path tree
 
-Per-router Dijkstra computation
+Instant routing table generation
 
-Immediate shortest-path visualization
+Supports weighted edges
 
-📦 Additional Features
+🔧 Topology Editing
+
+Add Router
+
+Add Link (custom/default cost)
+
+Delete Router (click on router)
+
+Delete Link (click on link)
+
+Move routers around
+
+Toggle routing tables on/off (Right Panel)
+
+💾 Save / Load
 
 Save topology to file
 
-Load topology from file
+Load topology anytime
 
-Toggle routing tables on/off
-
-Auto-maximized window on launch
-
-Clean node icons & UI layout
-
-🚀 How to Run the Simulator
-1. Compile
+🛠️ How to Run the Simulator
+Compile
 javac -d out src/simulator/*.java
 
-2. Run
+Run
 java -cp out simulator.Main
 
-📁 Project Structure
-Routing Protocol Simulator/
-│
-├── src/simulator/
-│   ├── Main.java
-│   ├── CanvasPanel.java
-│   ├── ControlPanel.java
-│   ├── RightPanel.java
-│   ├── Graph.java
-│   ├── Node.java
-│   ├── Edge.java
-│   ├── RoutingTableEntry.java
-│   ├── DistanceVectorEngine.java
-│   ├── LinkStateEngine.java
-│   └── TopologyIO.java
-│
-├── out/              (generated after compile)
-└── README.md
+🗂️ Project Structure
 
-🎓 Usage Instructions
-Adding Routers
+<img width="555" height="528" alt="image" src="https://github.com/user-attachments/assets/93d12704-409d-4f04-a966-0155b0e55461" />
 
-Click Add Router
 
-Click anywhere on the canvas
+🎮 How to Use the Simulator
+➕ Add Router
 
-Drag routers anytime
+Click Add Router → click on canvas
 
-Adding Links
+🔗 Add Link
 
-Click Add Link
+Click Add Link → click router A → router B
+Enter link cost (or use default)
 
-Click router 1 → router 2
-
-Enter cost or press OK to use default
-
-Deleting Routers/Links
+❌ Delete Router
 
 Click Delete Router → click any router
 
-Click Delete Link → click on any edge
+❌ Delete Link
 
-Press ESC to exit delete mode
+Click Delete Link → click any edge
 
-Running Routing Algorithms
+📊 Show/Hide Routing Tables
 
-Select algorithm (Distance Vector / Link State)
+Use the Show/Hide Routing Tables button on the right panel
 
-Click Run Algorithm
+▶️ Run Algorithm
 
-Routing tables appear next to each router
+Select:
 
-Show / Hide Routing Tables
+Distance Vector
 
-Use the toggle button on the right panel
+Link State
 
-Saving & Loading Graph
+Then press Run Algorithm
 
-Click Save Topology
+The routing tables appear next to routers.
 
-Click Load Topology
+🖱️ Drag Routers
+
+Click & drag any router
+Tables follow (or stay in manual positions)
+
+💾 Save / Load
+
+Use Save Topology and Load Topology button
