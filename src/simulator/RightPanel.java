@@ -2,18 +2,18 @@ package simulator;
 
 import javax.swing.*;
 import java.awt.*;
-import java.awt.event.*;
-import java.util.List;
 import java.util.Map;
 
 /**
- * Right-side panel with input fields and the Show/Hide Routing Tables button.
- * Now accepts the ControlPanel reference to read the selected algorithm.
+ * Right-side panel with:
+ * - Show/Hide Routing Tables button
+ * - Source-node dropdown
+ *
+ * Default link cost controls REMOVED.
  */
 public class RightPanel extends JPanel {
     private final CanvasPanel canvas;
     private final ControlPanel control;
-    private final JTextField costField;
     private final JComboBox<String> sourceCombo;
     private final JButton showHideTablesBtn;
 
@@ -26,62 +26,52 @@ public class RightPanel extends JPanel {
         gbc.insets = new Insets(8, 8, 8, 8);
         gbc.anchor = GridBagConstraints.NORTHWEST;
         gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.gridx = 0; gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
 
-        add(new JLabel("<html><b>Link Settings</b></html>"), gbc);
+        // Title
+        add(new JLabel("<html><b>Routing Controls</b></html>"), gbc);
 
+        // Show / Hide tables
         gbc.gridy++;
-        add(new JLabel("Default link cost:"), gbc);
-        gbc.gridy++;
-        costField = new JTextField(Integer.toString(canvas.getDefaultLinkCost()), 8);
-        add(costField, gbc);
-
-        gbc.gridy++;
-        JButton applyCost = new JButton("Apply Cost");
-        applyCost.addActionListener(e -> applyCost());
-        add(applyCost, gbc);
-
-        // Show/Hide routing tables button placed near the top
-        gbc.gridy++;
-        showHideTablesBtn = new JButton(canvas.getPerNodeTables() == null ? "Show Routing Tables" : "Hide Routing Tables");
+        showHideTablesBtn = new JButton(
+                canvas.getPerNodeTables() == null ? 
+                "Show Routing Tables" : 
+                "Hide Routing Tables"
+        );
         showHideTablesBtn.addActionListener(e -> toggleRoutingTables());
         add(showHideTablesBtn, gbc);
 
+        // Divider
         gbc.gridy++;
         add(new JSeparator(SwingConstants.HORIZONTAL), gbc);
 
+        // Node settings header
         gbc.gridy++;
         add(new JLabel("<html><b>Node Settings</b></html>"), gbc);
 
+        // Source node label
         gbc.gridy++;
         add(new JLabel("Select source node:"), gbc);
 
+        // Source node combo box
         gbc.gridy++;
         sourceCombo = new JComboBox<>();
         refreshNodeList();
         add(sourceCombo, gbc);
 
+        // Refresh button
         gbc.gridy++;
         JButton refreshBtn = new JButton("Refresh Nodes");
         refreshBtn.addActionListener(e -> refreshNodeList());
         add(refreshBtn, gbc);
 
-        // spacer to push content to top
+        // Spacer at bottom
         gbc.gridy++;
         gbc.weighty = 1.0;
         add(Box.createVerticalGlue(), gbc);
 
         setPreferredSize(new Dimension(240, 0));
-    }
-
-    private void applyCost() {
-        try {
-            int v = Integer.parseInt(costField.getText().trim());
-            canvas.setDefaultLinkCost(Math.max(1, v));
-            JOptionPane.showMessageDialog(this, "Default link cost set to " + canvas.getDefaultLinkCost());
-        } catch (NumberFormatException ex) {
-            JOptionPane.showMessageDialog(this, "Enter a valid integer cost.");
-        }
     }
 
     /** Refresh the nodes shown in the combo box using canvas node list. */
@@ -92,21 +82,21 @@ public class RightPanel extends JPanel {
         sourceCombo.setModel(m);
     }
 
-    /** Return selected source node id (or null). */
+    /** Return selected source node id */
     public String getSelectedSource() {
         Object o = sourceCombo.getSelectedItem();
         return o == null ? null : o.toString();
     }
 
-    // Show/hide routing tables using the algorithm selected in ControlPanel
+    /** toggle routing tables on/off */
     private void toggleRoutingTables() {
         if (canvas.getPerNodeTables() != null) {
             canvas.setPerNodeTables(null);
             showHideTablesBtn.setText("Show Routing Tables");
         } else {
-            // get algorithm from left control
             String algo = control.getSelectedAlgorithm();
-            Map<String, Map<String, RoutingTableEntry>> tables = canvas.computeRoutingTables(algo);
+            Map<String, Map<String, RoutingTableEntry>> tables =
+                    canvas.computeRoutingTables(algo);
             canvas.setPerNodeTables(tables);
             showHideTablesBtn.setText("Hide Routing Tables");
         }
