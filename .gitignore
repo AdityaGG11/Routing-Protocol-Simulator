@@ -1,0 +1,39 @@
+### Java ###
+*.class
+*.jar
+*.war
+*.ear
+
+# Maven / Gradle / Build tools (even if you don't use them)
+target/
+build/
+out/
+bin/
+
+### IntelliJ IDEA ###
+.idea/
+*.iml
+*.iws
+
+### VS Code ###
+.vscode/
+
+### Eclipse ###
+.project
+.classpath
+.settings/
+
+### Logs ###
+*.log
+
+### OS files ###
+.DS_Store
+Thumbs.db
+
+### Temporary ###
+*.tmp
+*.swp
+*.bak
+
+### Backup ###
+*~
