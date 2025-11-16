@@ -3,166 +3,226 @@ package simulator;
 import java.util.*;
 
 /**
- * Simple Link State engine.
+ * Link State Engine producing structured ProtocolEvent objects.
  *
- * Behavior (simplified):
- * - Each node's LSA is simply its adjacency list with link costs.
- * - We build a global LSDB by collecting LSAs for all nodes (no sequence numbers or flooding simulation here).
- * - For each node, run Dijkstra on the graph represented by the LSDB to compute shortest paths and next-hops.
+ * Behavior:
+ *  - For each node S in graph: run Dijkstra from S to compute shortest paths to all nodes.
+ *  - Emit ITERATION_START for each source S (iteration = source index starting at 1).
+ *  - Emit a MESSAGE_SEND event for the source's "LSA flood" (visual hint).
+ *  - During Dijkstra, when a node's best distance is finalized (popped from PQ),
+ *    emit TABLE_UPDATE events for that destination (with next-hop and cost).
+ *  - After processing all sources, emit CONVERGED (iteration=1).
  *
- * Note: This is a simplified, local LS implementation intended for visualization and testing.
+ * Public API:
+ *  - boolean runWithLogging()        // runs and fills logs/events
+ *  - List<String> getLogs()
+ *  - List<ProtocolEvent> getEvents()
+ *  - Map<String, RoutingTableEntry> getRoutingTable(String nodeId)
+ *  - int getConvergedIterations()
  */
 public class LinkStateEngine {
     private final Graph graph;
-    // LSDB: nodeId -> map(neighborId -> cost)
-    private final Map<String, Map<String, Integer>> lsdb = new LinkedHashMap<>();
-    // computed routing tables: nodeId -> (destination -> RoutingTableEntry)
+    private final List<String> logs = new ArrayList<>();
+    private final List<ProtocolEvent> events = new ArrayList<>();
     private final Map<String, Map<String, RoutingTableEntry>> tables = new LinkedHashMap<>();
+    private int convergedIterations = -1;
+    private static final int INF = 1_000_000_000;
 
     public LinkStateEngine(Graph graph) {
         this.graph = graph;
-        buildLsdb();
-        computeAllRoutingTables();
     }
 
-    /** Build LSDB from current graph state. */
-    public void buildLsdb() {
-        lsdb.clear();
-        for (Node n : graph.getNodes()) {
-            Map<String, Integer> nbrs = new LinkedHashMap<>();
-            for (String nb : n.getNeighborIds()) {
-                Edge e = graph.getEdge(n.getEdgeIdForNeighbor(nb));
-                if (e != null && e.isUp()) {
-                    nbrs.put(nb, e.getCost());
-                }
-            }
-            lsdb.put(n.getId(), nbrs);
-        }
-    }
-
-    /** Compute Dijkstra for every node and populate tables map. */
-    public void computeAllRoutingTables() {
+    /**
+     * Run Link-State: for each node as source, run Dijkstra and emit events.
+     * Returns true if run successfully (always true here).
+     */
+    public boolean runWithLogging() {
+        logs.clear();
+        events.clear();
         tables.clear();
-        // prepare node list
-        List<String> nodes = new ArrayList<>(lsdb.keySet());
+        convergedIterations = -1;
+
+        // Prepare adjacency map
+        Map<String, Map<String, Integer>> adj = new HashMap<>();
+        for (Edge e : graph.getEdges()) {
+            adj.computeIfAbsent(e.getA(), k -> new HashMap<>()).put(e.getB(), e.getCost());
+            adj.computeIfAbsent(e.getB(), k -> new HashMap<>()).put(e.getA(), e.getCost());
+        }
+        for (Node n : graph.getNodes()) adj.computeIfAbsent(n.getId(), k -> new HashMap<>());
+
+        List<String> nodes = new ArrayList<>();
+        for (Node n : graph.getNodes()) nodes.add(n.getId());
+
+        logs.add("Link State: starting Dijkstra from every node.");
+        events.add(ProtocolEvent.info("Link State: starting Dijkstra from every node."));
+
+        int iter = 0;
         for (String src : nodes) {
-            Map<String, RoutingTableEntry> rt = computeRoutingTableFor(src);
-            tables.put(src, rt);
-        }
-    }
+            iter++;
+            logs.add("Dijkstra source: " + src);
+            events.add(ProtocolEvent.iterationStart(iter));
 
-    /** Compute routing table for a single source using Dijkstra over lsdb. */
-    private Map<String, RoutingTableEntry> computeRoutingTableFor(String src) {
-        // Dijkstra: dist and prev
-        Map<String, Integer> dist = new HashMap<>();
-        Map<String, String> prev = new HashMap<>();
-        Set<String> visited = new HashSet<>();
+            // For visualization: simulate an LSA "broadcast" from src (single event)
+            String randomEdge = findAnyEdgeFrom(src);
+            events.add(ProtocolEvent.messageSend(src, null, randomEdge, iter,
+                    "LSA flood from " + src));
 
-        for (String n : lsdb.keySet()) {
-            dist.put(n, RoutingTableEntry.INFINITY);
-            prev.put(n, null);
-        }
-        dist.put(src, 0);
-
-        // Priority queue (nodeId, dist)
-        PriorityQueue<String> pq = new PriorityQueue<>(Comparator.comparingInt(dist::get));
-        pq.add(src);
-
-        while (!pq.isEmpty()) {
-            String u = pq.poll();
-            if (visited.contains(u)) continue;
-            visited.add(u);
-
-            Map<String, Integer> neighbors = lsdb.get(u);
-            if (neighbors == null) continue;
-            for (Map.Entry<String, Integer> e : neighbors.entrySet()) {
-                String v = e.getKey();
-                int costUV = e.getValue();
-                if (!lsdb.containsKey(v)) continue; // skip unknown
-                int alt = (dist.get(u) >= RoutingTableEntry.INFINITY) ? RoutingTableEntry.INFINITY : dist.get(u) + costUV;
-                if (alt < dist.get(v)) {
-                    dist.put(v, alt);
-                    prev.put(v, u);
-                    pq.add(v);
-                }
+            // Dijkstra structures
+            Map<String, Integer> dist = new HashMap<>();
+            Map<String, String> prev = new HashMap<>();
+            for (String v : nodes) {
+                dist.put(v, INF);
+                prev.put(v, null);
             }
-        }
+            dist.put(src, 0);
 
-        // Build routing table entries with next-hop resolution
-        Map<String, RoutingTableEntry> rt = new LinkedHashMap<>();
-        for (String dst : lsdb.keySet()) {
-            if (dst.equals(src)) {
-                rt.put(dst, new RoutingTableEntry(dst, src, 0));
-            } else if (dist.getOrDefault(dst, RoutingTableEntry.INFINITY) >= RoutingTableEntry.INFINITY) {
-                rt.put(dst, new RoutingTableEntry(dst, null, RoutingTableEntry.INFINITY));
-            } else {
-                // find next hop by walking prev[] from dst back to src
-                String cur = dst;
-                String prevNode = prev.get(cur);
-                String nextHop = null;
-                // walk until prevNode is src, then cur is nextHop (if path exists)
-                while (prevNode != null && !prevNode.equals(src)) {
-                    cur = prevNode;
-                    prevNode = prev.get(cur);
-                }
-                if (prevNode == null) {
-                    // direct neighbor?
-                    // if prev.get(dst) == src then nextHop = dst's immediate neighbor cur
-                    if (prev.get(dst) != null && prev.get(dst).equals(src)) nextHop = dst;
-                    else {
-                        // fallback: find neighbor of src on path by reconstructing path list
-                        // Simple robust approach: reconstruct full path and take second element
-                        List<String> path = reconstructPath(prev, src, dst);
-                        if (path.size() >= 2) nextHop = path.get(1);
-                    }
+            // min-heap of (distance, node)
+            PriorityQueue<NodeDist> pq = new PriorityQueue<>();
+            pq.add(new NodeDist(src, 0));
+
+            Set<String> visited = new HashSet<>();
+
+            while (!pq.isEmpty()) {
+                NodeDist nd = pq.poll();
+                String u = nd.node;
+                int d = nd.dist;
+                if (visited.contains(u)) continue;
+                visited.add(u);
+
+                // When node u is finalized, emit TABLE_UPDATE for this destination relative to src:
+                // nextHop is the first hop from src to u (reconstruct path)
+                if (!u.equals(src)) {
+                    String nextHop = computeNextHop(prev, src, u);
+                    int cost = d >= INF ? INF : d;
+                    // update the tables accumulation for source src
+                    tables.computeIfAbsent(src, k -> initEmptyTable(nodes, src));
+                    Map<String, RoutingTableEntry> tab = tables.get(src);
+                    tab.put(u, new RoutingTableEntry(u, nextHop, cost));
+
+                    String edgeId = findEdgeIdBetweenPrevAnd(u, prev);
+                    events.add(ProtocolEvent.tableUpdate(src, u, nextHop,
+                            null, cost, edgeId, iter,
+                            String.format("%s -> %s: nextHop=%s cost=%d", src, u, nextHop, cost)));
+                    logs.add(String.format("Dijkstra[%s]: finalized %s (cost=%d) nextHop=%s", src, u, cost, nextHop));
                 } else {
-                    nextHop = cur;
+                    // ensure table entry for self
+                    tables.computeIfAbsent(src, k -> initEmptyTable(nodes, src));
+                    Map<String, RoutingTableEntry> tab = tables.get(src);
+                    tab.put(src, new RoutingTableEntry(src, src, 0));
                 }
-                int cost = dist.get(dst);
-                rt.put(dst, new RoutingTableEntry(dst, nextHop, cost));
+
+                // relax neighbors
+                Map<String, Integer> nbrs = adj.getOrDefault(u, Collections.emptyMap());
+                for (Map.Entry<String, Integer> en : nbrs.entrySet()) {
+                    String v = en.getKey();
+                    int w = en.getValue();
+                    if (visited.contains(v)) continue;
+                    int cand = (d >= INF) ? INF : d + w;
+                    if (cand < dist.get(v)) {
+                        dist.put(v, cand);
+                        prev.put(v, u);
+                        pq.add(new NodeDist(v, cand));
+                    }
+                }
             }
+
+            events.add(ProtocolEvent.iterationEnd(iter));
         }
 
-        return rt;
+        // After all sources processed, mark convergence (single round)
+        convergedIterations = 1;
+        logs.add("Link State: completed Dijkstra for all nodes.");
+        events.add(ProtocolEvent.converged(convergedIterations));
+        return true;
     }
 
-    /** Reconstruct path from src to dst using prev map (may return empty list if no path). */
-    private List<String> reconstructPath(Map<String, String> prev, String src, String dst) {
-        LinkedList<String> path = new LinkedList<>();
-        String cur = dst;
-        while (cur != null) {
-            path.addFirst(cur);
-            if (cur.equals(src)) break;
-            cur = prev.get(cur);
-        }
-        if (path.isEmpty() || !path.getFirst().equals(src)) return Collections.emptyList();
-        return path;
+    /** Return logs copy. */
+    public List<String> getLogs() {
+        return new ArrayList<>(logs);
     }
 
-    /** Get a copy of a node's routing table. */
+    /** Return events copy. */
+    public List<ProtocolEvent> getEvents() {
+        return new ArrayList<>(events);
+    }
+
+    /** Return routing table for a node (the table produced when that node was used as source). */
     public Map<String, RoutingTableEntry> getRoutingTable(String nodeId) {
-        Map<String, RoutingTableEntry> src = tables.get(nodeId);
-        if (src == null) return null;
+        Map<String, RoutingTableEntry> t = tables.get(nodeId);
+        if (t == null) return Collections.emptyMap();
         Map<String, RoutingTableEntry> copy = new LinkedHashMap<>();
-        for (Map.Entry<String, RoutingTableEntry> e : src.entrySet()) {
+        for (Map.Entry<String, RoutingTableEntry> e : t.entrySet()) {
             RoutingTableEntry r = e.getValue();
             copy.put(e.getKey(), new RoutingTableEntry(r.getDestination(), r.getNextHop(), r.getCost()));
         }
         return copy;
     }
 
-    /** Utility: print all routing tables to stdout (for quick tests). */
-    public void printAllTables() {
-        for (String nodeId : tables.keySet()) {
-            System.out.println("Routing table for " + nodeId + ":");
-            Map<String, RoutingTableEntry> rt = tables.get(nodeId);
-            for (RoutingTableEntry r : rt.values()) {
-                String cost = r.isInfinity() ? "INF" : Integer.toString(r.getCost());
-                System.out.printf("  dst=%s next=%s cost=%s%n", r.getDestination(),
-                        (r.getNextHop() == null ? "-" : r.getNextHop()), cost);
-            }
-            System.out.println();
+    public int getConvergedIterations() {
+        return convergedIterations;
+    }
+
+    // ---------- helpers ----------
+
+    private Map<String, RoutingTableEntry> initEmptyTable(List<String> nodes, String self) {
+        Map<String, RoutingTableEntry> t = new LinkedHashMap<>();
+        for (String v : nodes) {
+            if (v.equals(self)) t.put(v, new RoutingTableEntry(v, self, 0));
+            else t.put(v, new RoutingTableEntry(v, null, INF));
         }
+        return t;
+    }
+
+    /** Find any edge id that originates or touches node (used for LSA message visualization). */
+    private String findAnyEdgeFrom(String node) {
+        for (Edge e : graph.getEdges()) {
+            if (e.getA().equals(node) || e.getB().equals(node)) return e.getId();
+        }
+        return null;
+    }
+
+    /** Find edge id used when finalizing node u using prev map: edge between u and prev[u] (if exists). */
+    private String findEdgeIdBetweenPrevAnd(String u, Map<String, String> prev) {
+        String p = prev.get(u);
+        if (p == null) return null;
+        return findEdgeId(u, p);
+    }
+
+    /** Find edge id connecting a and b (both directions). Returns null if not found. */
+    private String findEdgeId(String a, String b) {
+        for (Edge e : graph.getEdges()) {
+            if ((e.getA().equals(a) && e.getB().equals(b)) || (e.getA().equals(b) && e.getB().equals(a))) {
+                return e.getId();
+            }
+        }
+        return null;
+    }
+
+    /** Compute the next hop from source -> dest, using prev map built by Dijkstra.
+     *  It walks backward from dest to source via prev[] and returns the immediate neighbor of source.
+     */
+    private String computeNextHop(Map<String, String> prev, String source, String dest) {
+        if (source.equals(dest)) return source;
+        // reconstruct path backwards
+        LinkedList<String> path = new LinkedList<>();
+        String cur = dest;
+        while (cur != null) {
+            path.addFirst(cur);
+            if (cur.equals(source)) break;
+            cur = prev.get(cur);
+        }
+        if (path.isEmpty()) return null;
+        // path[0] == source, path[1] is next hop
+        if (path.size() >= 2) return path.get(1);
+        return null;
+    }
+
+    // small helper to represent PQ entries
+    private static class NodeDist implements Comparable<NodeDist> {
+        final String node;
+        final int dist;
+        NodeDist(String node, int dist) { this.node = node; this.dist = dist; }
+        @Override
+        public int compareTo(NodeDist o) { return Integer.compare(this.dist, o.dist); }
     }
 }
-

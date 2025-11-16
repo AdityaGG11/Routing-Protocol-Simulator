@@ -1,0 +1,15 @@
+{
+  "nodes": [
+    {"id":"A","x":318,"y":157},
+    {"id":"B","x":340,"y":479},
+    {"id":"C","x":683,"y":275},
+    {"id":"D","x":159,"y":346}
+  ],
+  "edges": [
+    {"id":"e1","from":"A","to":"B","cost":11,"isUp":true},
+    {"id":"e2","from":"B","to":"C","cost":16,"isUp":true},
+    {"id":"e3","from":"C","to":"A","cost":18,"isUp":true},
+    {"id":"e4","from":"D","to":"C","cost":6,"isUp":true},
+    {"id":"e5","from":"D","to":"A","cost":11,"isUp":true}
+  ]
+}

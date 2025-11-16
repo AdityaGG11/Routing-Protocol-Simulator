@@ -1,11 +1,11 @@
 package simulator;
 
-import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
 import java.io.File;
 import java.util.*;
 import java.util.List;
+import javax.swing.*;
 
 /**
  * CanvasPanel with per-node inline routing table drawing and:
@@ -276,7 +276,7 @@ public class CanvasPanel extends JPanel {
         Map<String, Map<String, RoutingTableEntry>> result = new LinkedHashMap<>();
         if ("Distance Vector".equals(algorithm)) {
             DistanceVectorEngine dv = new DistanceVectorEngine(graph);
-            dv.runUntilConverged(50);
+            dv.runWithLogging(50);
             for (Node n : graph.getNodes()) {
                 result.put(n.getId(), dv.getRoutingTable(n.getId()));
             }
@@ -612,6 +612,286 @@ public class CanvasPanel extends JPanel {
             return "N" + (nextLabel++);
         }
     }
+
+    // ---------- Event playback fields ----------
+    private EventPlayer eventPlayer = null;
+    private final java.util.List<String> lastStepLogs = new java.util.ArrayList<>();
+        /** Return a copy of the last step logs produced/used by playback or engines. */
+    public java.util.List<String> getLastStepLogs() {
+        return lastStepLogs == null ? new ArrayList<>() : new ArrayList<>(lastStepLogs);
+    }
+
+    private int playbackIndex = -1;   // last applied event index (0-based)
+    private int playbackTotal = 0;    // total events in current playback
+    private List<ProtocolEvent> playbackEvents = null;
+
+    /**
+     * Initialize perNodeTables to a sensible starting state for playback:
+     * - each node has entries for all nodes with INF cost except self=0
+     * - direct neighbors get their link cost as nextHop
+     */
+    private void initPlaybackTables() {
+        Map<String, Map<String, RoutingTableEntry>> init = new LinkedHashMap<>();
+        // collect nodes and adjacency
+        List<String> nodes = new ArrayList<>();
+        for (Node n : graph.getNodes()) nodes.add(n.getId());
+        Map<String, Map<String, Integer>> adj = new HashMap<>();
+        for (Edge e : graph.getEdges()) {
+            adj.computeIfAbsent(e.getA(), k -> new HashMap<>()).put(e.getB(), e.getCost());
+            adj.computeIfAbsent(e.getB(), k -> new HashMap<>()).put(e.getA(), e.getCost());
+        }
+        // create tables
+        final int INF = 1_000_000_000;
+        for (String u : nodes) {
+            Map<String, RoutingTableEntry> t = new LinkedHashMap<>();
+            for (String v : nodes) {
+                if (u.equals(v)) t.put(v, new RoutingTableEntry(v, u, 0));
+                else t.put(v, new RoutingTableEntry(v, null, INF));
+            }
+            Map<String,Integer> nbrs = adj.getOrDefault(u, Collections.emptyMap());
+            for (Map.Entry<String,Integer> en : nbrs.entrySet()) {
+                String nb = en.getKey();
+                int cost = en.getValue();
+                t.put(nb, new RoutingTableEntry(nb, nb, cost));
+            }
+            init.put(u, t);
+        }
+        // set into canvas (will trigger repaint)
+        setPerNodeTables(init);
+    }
+
+    /**
+     * Apply a single ProtocolEvent to the canvas: update tables and visual effects.
+     * This method is safe to call on the EDT (it uses repaint calls).
+     */
+    public void applyEvent(ProtocolEvent e) {
+        if (e == null) return;
+        // make sure perNodeTables exists
+        if (perNodeTables == null) initPlaybackTables();
+
+        switch (e.getType()) {
+            case MESSAGE_SEND: {
+                String src = e.getSource();
+                String tgt = e.getTarget();
+                String edge = e.getEdgeId();
+                // flash the edge and the nodes briefly
+                if (edge != null) flashEdge(edge, 300);
+                if (src != null) flashNode(src, 300);
+                if (tgt != null) flashNode(tgt, 300);
+                break;
+            }
+            case TABLE_UPDATE: {
+                String node = e.getTarget();     // router that updated
+                String dest = e.getDest();      // destination whose entry changed
+                String nextHop = e.getVia();    // next hop
+                Integer newCost = e.getNewCost();
+                String edge = e.getEdgeId();
+                if (node != null && dest != null) {
+                    Map<String, RoutingTableEntry> t = perNodeTables.get(node);
+                    if (t == null) {
+                        t = new LinkedHashMap<>();
+                        // initialize entries to INF except self
+                        for (Node n : graph.getNodes()) {
+                            String id = n.getId();
+                            t.put(id, new RoutingTableEntry(id, id.equals(node) ? node : null,
+                                    id.equals(node) ? 0 : 1_000_000_000));
+                        }
+                        perNodeTables.put(node, t);
+                    }
+                    // update entry
+                    t.put(dest, new RoutingTableEntry(dest, nextHop, newCost == null ? 1_000_000_000 : newCost));
+                    // visual cue
+                    flashNode(node, 450);
+                    if (edge != null) flashEdge(edge, 450);
+                }
+                break;
+            }
+            case ITERATION_START:
+            case ITERATION_END:
+            case CONVERGED:
+            case INFO: {
+                // for these just append the message to lastStepLogs so Steps panel can show progress
+                if (e.getMessage() != null) {
+                    lastStepLogs.add(e.getMessage());
+                } else {
+                    lastStepLogs.add(e.toString());
+                }
+                break;
+            }
+            default:
+                // fallback: append string
+                lastStepLogs.add(e.toString());
+                break;
+        }
+        // update last applied index for UI
+        // playbackIndex will be set by EventPlayer listener; if not set, keep as-is
+        repaint();
+    }
+
+    /**
+     * Play a list of events with the given delay (ms per event).
+     * This will reset per-node tables to a clean initial state before playing.
+     *
+     * @param events list of ProtocolEvent
+     * @param delayMs milliseconds per event (e.g. 300)
+     * @param resetTables whether to reset initial tables before playback (true recommended)
+     */
+    public void playEvents(java.util.List<ProtocolEvent> events, int delayMs, boolean resetTables) {
+        if (events == null) events = Collections.emptyList();
+        // stop any previous player
+        stopPlayback();
+
+        this.playbackEvents = new ArrayList<>(events);
+        this.playbackTotal = playbackEvents.size();
+        this.playbackIndex = -1;
+
+        // make lastStepLogs show full event messages (Steps panel can highlight)
+        lastStepLogs.clear();
+        for (ProtocolEvent ev : playbackEvents) lastStepLogs.add(ev.toString());
+
+        if (resetTables) initPlaybackTables();
+
+        // create player with listener that applies events
+                EventPlayer.Listener listener = new EventPlayer.Listener() {
+            @Override
+            public void onEvent(ProtocolEvent event, int index, int total) {
+                // apply this event on EDT - listener already invoked on EDT by EventPlayer
+                applyEvent(event);
+                playbackIndex = index;
+                // Steps panel will read getLastStepLogs() if needed
+            }
+
+            @Override
+            public void onFinished() {
+                // nothing special for now; you can extend this to notify UI
+            }
+        };
+
+        eventPlayer = new EventPlayer(playbackEvents, listener);
+        eventPlayer.setDelayMs(Math.max(10, delayMs));
+        eventPlayer.play();
+    }
+
+    /** Pause playback (if playing). */
+    public void pausePlayback() {
+        if (eventPlayer != null) eventPlayer.pause();
+    }
+
+    /** Stop playback and clear player. Does not reset tables. */
+    public void stopPlayback() {
+        if (eventPlayer != null) {
+            eventPlayer.pause();
+            eventPlayer = null;
+        }
+        playbackIndex = -1;
+        playbackTotal = 0;
+        playbackEvents = null;
+    }
+
+    /** Step forward by one event (useful when paused). */
+    public void stepPlayback() {
+        if (eventPlayer != null) {
+            eventPlayer.stepForward();
+        } else if (playbackEvents != null && !playbackEvents.isEmpty()) {
+            // create a temporary single-step player to apply next
+            int next = playbackIndex + 1;
+            if (next < playbackEvents.size()) {
+                applyEvent(playbackEvents.get(next));
+                playbackIndex = next;
+            }
+        }
+    }
+
+    /** Return last applied event index (0-based), or -1 if none applied. */
+    public int getPlaybackIndex() { return playbackIndex; }
+
+    /** Return total events in the current playback (0 if none). */
+    public int getPlaybackTotal() { return playbackTotal; }
+
+    /** Return current event list (copy) */
+    public java.util.List<ProtocolEvent> getPlaybackEvents() {
+        return playbackEvents == null ? Collections.emptyList() : new ArrayList<>(playbackEvents);
+    }
+
+        /**
+     * Run the selected algorithm (without touching UI tables) and return the generated events.
+     * This method runs the engine synchronously and returns a copy of events produced.
+     * If an engine isn't available or fails, returns an empty list.
+     */
+        /**
+     * Run the selected algorithm (without touching UI tables) and return the generated events.
+     * This method runs the engine synchronously and returns a copy of events produced.
+     * If an engine isn't available or fails, returns an empty list.
+     */
+    /**
+ * Run the selected algorithm (without touching UI tables) and return event list.
+ * Now fully supports Distance Vector + Link State engines with proper event generation.
+ */
+public java.util.List<ProtocolEvent> fetchEventsForAlgorithm(String algorithm) {
+    java.util.List<ProtocolEvent> evs = new java.util.ArrayList<>();
+    if (algorithm == null) return evs;
+
+    try {
+        // ---------------------------
+        // DISTANCE VECTOR
+        // ---------------------------
+        if ("Distance Vector".equalsIgnoreCase(algorithm) ||
+            algorithm.toLowerCase().contains("distance")) {
+
+            DistanceVectorEngine dv = new DistanceVectorEngine(graph);
+            dv.runWithLogging(200);
+            evs = dv.getEvents();
+
+            // Set final routing tables on canvas
+            java.util.Map<String, java.util.Map<String, RoutingTableEntry>> finalTables =
+                    new java.util.LinkedHashMap<>();
+            for (Node n : graph.getNodes()) {
+                finalTables.put(n.getId(), dv.getRoutingTable(n.getId()));
+            }
+            setPerNodeTables(finalTables);
+        }
+
+        // ---------------------------
+        // LINK STATE  (FIXED)
+        // ---------------------------
+        else if ("Link State".equalsIgnoreCase(algorithm) ||
+                 algorithm.toLowerCase().contains("link")) {
+
+            LinkStateEngine ls = new LinkStateEngine(graph);
+            ls.runWithLogging();       // generate events, logs, final tables
+            evs = ls.getEvents();      // <-- now real events
+
+            // Set final routing tables on canvas
+            java.util.Map<String, java.util.Map<String, RoutingTableEntry>> finalTables =
+                    new java.util.LinkedHashMap<>();
+            for (Node n : graph.getNodes()) {
+                finalTables.put(n.getId(), ls.getRoutingTable(n.getId()));
+            }
+            setPerNodeTables(finalTables);
+        }
+
+        // ---------------------------
+        // FALLBACK
+        // ---------------------------
+        else {
+            // no events, only final tables
+            java.util.Map<String, java.util.Map<String, RoutingTableEntry>> tables =
+                    computeRoutingTables(algorithm);
+            setPerNodeTables(tables);
+            evs = new java.util.ArrayList<>();
+        }
+
+    } catch (Exception ex) {
+        try {
+            if (lastStepLogs != null)
+                lastStepLogs.add("fetchEvents ERROR: " + ex.getMessage());
+        } catch (Throwable ignored) {}
+        return new java.util.ArrayList<>();
+    }
+
+    return (evs == null) ? new java.util.ArrayList<>() : new java.util.ArrayList<>(evs);
+}
+
 
     // save/load helpers unchanged
     public void saveToFile(File file) {
