@@ -1,108 +1,118 @@
-🚀 Routing Protocol Simulator (Java Swing GUI)
+# Routing Protocol Simulator (Java Swing GUI)
 
-A fully interactive Computer Networks routing simulator built using Java Swing, allowing students to design network topologies, simulate routing protocols, and visualize routing tables live on the canvas.
+A fully interactive Computer Networks routing simulator built in Java Swing.
+Design network topologies, simulate routing protocols (Distance Vector & Link State), and visualize routing tables and protocol events live on the canvas.
+___
+**Features**
 
-✨ Features
-🖼️ Interactive GUI
+* Interactive GUI (drag routers, draw links)
 
-Draw routers and links directly on the canvas
+* Draggable per-router routing-table windows
 
-Drag routers freely
+* Two routing algorithms:
 
-Draggable routing-table windows
+   * Distance Vector (DV) — iterative table exchange + convergence visualization
 
-Clean router icon design
+   * Link State (LS) — Dijkstra per router, LSA & relaxations animation
 
-Auto-align & manual repositioning of routing tables
+* Event playback: Prepare → Play → Pause → Step → Stop
 
-📡 Routing Algorithms
-1. Distance Vector Routing
+* Save / Load topology files
 
-Simulated iterative table exchange
-
-Node & link flashing animation for updates
-
-Convergence visualization
-
-2. Link State Routing (Dijkstra)
-
-Per-router shortest path tree
-
-Instant routing table generation
-
-Supports weighted edges
-
-🔧 Topology Editing
-
-Add Router
-
-Add Link (custom/default cost)
-
-Delete Router (click on router)
-
-Delete Link (click on link)
-
-Move routers around
-
-Toggle routing tables on/off (Right Panel)
-
-💾 Save / Load
-
-Save topology to file
-
-Load topology anytime
-
-🛠️ How to Run the Simulator
-Compile
-javac -d out src/simulator/*.java
-
-Run
-java -cp out simulator.Main
-
-🗂️ Project Structure
-
-<img width="555" height="528" alt="image" src="https://github.com/user-attachments/assets/93d12704-409d-4f04-a966-0155b0e55461" />
+* Clean, educational visualization (flashing links/nodes, table updates)
 
 
-🎮 How to Use the Simulator
-➕ Add Router
+# Clone repository (one-time)
 
-Click Add Router → click on canvas
+Open your VS Code terminal (or any terminal) and run:
 
-🔗 Add Link
+**clone**
 
-Click Add Link → click router A → router B
-Enter link cost (or use default)
+* git clone https://github.com/AdityaGG11/Routing-Protocol-Simulator.git
 
-❌ Delete Router
+**change into the project folder**
 
-Click Delete Router → click any router
+* cd "Routing-Protocol-Simulator"
+___
 
-❌ Delete Link
+# Quick setup: compile & run (Windows / VSCode)
 
-Click Delete Link → click any edge
+These commands assume you are inside the repository root (the folder that contains src/).
 
-📊 Show/Hide Routing Tables
+**create output directory (if not present)**
 
-Use the Show/Hide Routing Tables button on the right panel
+* mkdir -p out
 
-▶️ Run Algorithm
+**compile all Java sources to the out/ directory**
 
-Select:
+* javac -d out src/simulator/*.java
 
-Distance Vector
+**run the GUI**
 
-Link State
+* java -cp out simulator.Main
+___
 
-Then press Run Algorithm
+# Full project structure (root-level)
 
-The routing tables appear next to routers.
+<img width="647" height="500" alt="image" src="https://github.com/user-attachments/assets/196b127b-9061-4768-9c4f-00afd48e30ae" />
+___
+# What each phase does:-
 
-🖱️ Drag Routers
+* Graph, Node, Edge — network model (store nodes/links, costs, positions).
 
-Click & drag any router
-Tables follow (or stay in manual positions)
+* RoutingTableEntry — single routing table row (destination, next hop, cost).
 
-💾 Save / Load
+* DistanceVectorEngine — implements DV: iterative neighbor vector exchanges, emits ProtocolEvents and final routing tables.
 
-Use Save Topology and Load Topology button
+* LinkStateEngine — implements LS: Dijkstra per router, emits events for LSAs & relaxations and provides final tables.
+
+* ProtocolEvent — structured event representing algorithm steps (MESSAGE_SEND, TABLE_UPDATE, ITERATION_START, CONVERGED, INFO).
+
+* EventPlayer — plays a list of ProtocolEvent objects (play/pause/step/stop, speed control).
+
+* CanvasPanel — main drawing surface: routers, links, routing tables, and animations. It applies events from EventPlayer.
+
+* ControlPanel — left-side UI: add/delete nodes and links, mode toggles.
+
+* RightPanel — right-side UI: algorithm selector, Prepare Events, Play/Pause/Step/Stop, speed slider, steps/logs area.
+
+* TopologyIO — save/load topology files (optional helper).
+
+* MainTestDV/MainTestLS — small test mains to run engines and print logs for debugging.
+___
+# Simulator Guide (step by step)
+
+**Start the app**
+
+* java -cp out simulator.Main
+
+
+**Add routers**
+
+* Click Add Router on the left, then click anywhere on the canvas.
+
+**Add links**
+
+* Click Add Link, click Router A → Router B, enter link cost (or leave default).
+
+**Delete router/link**
+
+* Click Delete Router or Delete Link, then click the target router/edge to remove.
+
+**Show/Hide routing tables**
+
+* Use the Show/Hide Routing Tables button on the right panel.
+
+**Prepare Events**
+
+* On the left panel choose Distance Vector or Link State, then click Prepare Events on the right panel (runs engine and populates events & final tables).
+
+**Play**
+
+* Click Play to animate events. Use Pause, Step, and change Speed with the slider.
+
+**Save/Load topology**
+
+* Use Save Topology / Load Topology (if implemented) to persist or reuse your topology.
+
+___
