@@ -55,6 +55,7 @@ ___
 # Full project structure (root-level)
 
 <img width="647" height="500" alt="image" src="https://github.com/user-attachments/assets/196b127b-9061-4768-9c4f-00afd48e30ae" />
+
 ___
 
 # What each phase does:-
